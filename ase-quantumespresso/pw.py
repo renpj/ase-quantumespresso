@@ -183,7 +183,7 @@ class PWInput(object):
     def from_string(string):
         """
         Reads an PWInput object from a string.
-
+        Convert PWInput to XSF, then parse XSF by ase.io to get coord, cell.
         Args:
             string (str): PWInput string
 

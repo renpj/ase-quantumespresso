@@ -110,7 +110,45 @@ fi
 #
 # execute $PWI2XSF fortran program and print the XSF file
 #
-pwi2xsf.x < pw.$$ | tee pwi2xsf.xsf_out
+if test "x`type readlink`" = "x"; then
+    # no readlink cmd; make a function-substitute
+    readlink() {
+	echo `ls -l $1 | awk '{print $1}'`
+    }
+fi
+
+pathname() {
+    file=`type -p $1`
+    if test $? -gt 0; then
+	file=`which $1`
+	if test $? -gt 0; then
+	    # give-up
+	    file=$1
+	fi
+    fi
+    echo $file
+}
+
+pathdir() {
+    file=`pathname $1`
+    
+    while test -h $file; do  
+	file=`readlink $file`
+    done
+
+    dir=`dirname $file`
+    ( cd $dir; pwd )
+}
+
+if test -z $XCRYSDEN_TOPDIR; then
+    # XCRYSDEN_TOPDIR does not exists, guess it from the process
+    scriptdir=`pathdir $0`
+    export XCRYSDEN_TOPDIR=`(cd $scriptdir/..; pwd)`
+else
+    scriptdir=$XCRYSDEN_TOPDIR/scripts
+fi
+
+$scriptdir/pwi2xsf < pw.$$ #| tee pwi2xsf.xsf_out
 
 rm -f pw.$$
 
