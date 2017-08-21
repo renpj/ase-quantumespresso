@@ -6,19 +6,16 @@ from __future__ import division, unicode_literals
 
 import re
 import six
+import ase
 
 from monty.io import zopen
 
 from monty.re import regrep
 from collections import defaultdict
 
-from pymatgen.core.periodic_table import Element
-from pymatgen.core.lattice import Lattice
-from pymatgen.core.structure import Structure
-from pymatgen.util.io_utils import clean_lines
-
 """
 This module implements input and output processing for PWSCF.
+Use xcrysden functions and scripts to read the pw input and output structures.
 """
 __author__ = "PJ Ren"
 __copyright__ = "Copyright 2017, PJ Ren"
@@ -31,13 +28,35 @@ def get_atom_mass(symbol):
     n = ase.data.atomic_numbers[symbol]
     return ase.data.atomic_masses[n-1]
 
+def clean_lines(string_list, remove_empty_lines=True):
+    """
+    Strips whitespace, carriage returns and empty lines from a list of strings.
+
+    Args:
+        string_list: List of strings
+        remove_empty_lines: Set to True to skip lines which are empty after
+            stripping.
+
+    Returns:
+        List of clean strings with no whitespaces.
+    """
+
+    for s in string_list:
+        clean_s = s
+        if '#' in s:
+            ind = s.index('#')
+            clean_s = s[:ind]
+        clean_s = clean_s.strip()
+        if (not remove_empty_lines) or clean_s != '':
+            yield clean_s
+
 class PWInput(object):
     """
     Base input file class. Right now, only supports no symmetry and is
     very basic. Initially adopted from pymatgen
     """
 
-    def __init__(self, atoms, pseudo=None, control=None, system=None,
+    def __init__(self, atoms=None, pseudo=None, control=None, system=None,
                  electrons=None, ions=None, cell=None, kpoints_mode="automatic",
                  kpoints_grid=(1, 1, 1),kpoints_shift=(0, 0, 0)):
         """
@@ -72,7 +91,7 @@ class PWInput(object):
             raise PWInputError("Missing all pseudo specification!")
         else:
             for symbol in set(self.atoms.get_chemical_symbols()):
-                if not in pseudo:
+                if symbol not in pseudo:
                     raise PWInputError("Missing %s in pseudo specification!" 
                                        % symbol)
         self.pseudo = pseudo
@@ -121,11 +140,7 @@ class PWInput(object):
         out.append("ATOMIC_SPECIES")
         for k, v in sorted(self.pseudo.items(), key=lambda i: i[0]):
             e = re.match(r"[A-Z][a-z]?", k).group(0)
-            if self.pseudo is not None:
-                p = v
-            else:
-                p = v['pseudo']
-            out.append("  %s  %.4f %s" % (k, get_atom_mass(e), p)) 
+            out.append("  %s  %.4f %s" % (k, get_atom_mass(e), v)) 
 
         out.append("ATOMIC_POSITIONS crystal")
         for name,pos in zip(self.atoms.get_chemical_symbols(),self.atoms.get_scaled_positions()):
@@ -183,23 +198,25 @@ class PWInput(object):
             elif "ATOMIC_SPECIES" in line:
                 return ("pseudo", )
             elif "K_POINTS" in line:
-                return ("kpoints", line.split("{")[1][:-1])
+                line = line.replace('{',' ')
+                line = line.replace('}',' ')
+                return ("kpoints", line.split()[1])
             elif "CELL_PARAMETERS" in line or "ATOMIC_POSITIONS" in line:
-                return ("structure", line.split("{")[1][:-1])
+                line = line.replace('{',' ')
+                line = line.replace('}',' ')
+                return ("structure", line.split()[1])
             elif line == "/":
                 return None
             else:
-                return mode
+                return mode  # inherit from last line
 
         sections = {"control": {}, "system": {}, "electrons": {}, 
                     "ions": {}, "cell":{}}
         pseudo = {}
-        pseudo_index = 0
         lattice = []
         species = []
         coords = []
         structure = None
-        site_properties = {"pseudo":[]}
         mode = None
         for line in lines:
             mode = input_mode(line)
@@ -217,8 +234,6 @@ class PWInput(object):
                             val_ = [0.0]*20 # MAX NTYP DEFINITION
                             val_[int(key_)-1] = PWInput.proc_val(key, val)
                             sections[section][key] = val_
-
-                            site_properties[key] = []
                         else:
                             sections[section][key][int(key_)-1] = PWInput.proc_val(key, val) 
                     else:
@@ -227,10 +242,7 @@ class PWInput(object):
             elif mode[0] == "pseudo":
                 m = re.match(r'(\w+)\s+(\d*.\d*)\s+(.*)', line)
                 if m:
-                    pseudo[m.group(1).strip()] = {}
-                    pseudo[m.group(1).strip()]["index"] = pseudo_index
-                    pseudo[m.group(1).strip()]["pseudopot"] = m.group(3).strip()
-                    pseudo_index += 1
+                    pseudo[m.group(1).strip()] = m.group(3).strip()
             elif mode[0] == "kpoints":
                 m = re.match(r'(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)', line)
                 if m:
@@ -244,27 +256,33 @@ class PWInput(object):
                 if m_l:
                     lattice += [ float(m_l.group(1)), float(m_l.group(2)), float(m_l.group(3)) ]
                 elif m_p:
-                    site_properties["pseudo"].append(pseudo[m_p.group(1)]["pseudopot"])
-                    species += [pseudo[m_p.group(1)]["pseudopot"].split(".")[0]]
+                    species += m_p.group(1)
                     coords += [[float(m_p.group(2)), float(m_p.group(3)), float(m_p.group(4))]]
 
-                    for k, v in site_properties.items():
-                        if k != "pseudo":
-                            site_properties[k].append(sections['system'][k][pseudo[m_p.group(1)]["index"]])
                 if mode[1] == "angstrom":
                     coords_are_cartesian = True
                 elif mode[1] == "crystal":
                     coords_are_cartesian = False
-
+        if len(lattice) == 0: ## depend on QE pwi2xsf.x
+            
+        return (species,coords,pseudo,lattice)
         if coords_are_cartesian:
-            atoms = ase.Atoms(symbols=species,positions=coords,info=site_properties)
+            atoms = ase.Atoms(symbols=species,positions=coords,pbc=True,cell=lattice)
         else:
-            atoms = ase.Atoms(symbols=species,scaled_positions=coords,info=site_properties)
-        return PWInput(atoms=atoms, control=sections["control"],
-                       system=sections["system"], electrons=sections["electrons"], 
-                       ions=sections["ions"], cell=sections["cell"], kpoints_mode=kpoints_mode,
-                       kpoints_grid=kpoints_grid, kpoints_shift=kpoints_shift)
-
+            atoms = ase.Atoms(symbols=species,scaled_positions=coords,pbc=True,cell=lattice)
+        return PWInput(
+                    atoms=atoms,
+                    pseudo = pseudo,
+                    control=sections["control"],
+                    system=sections["system"], 
+                    electrons=sections["electrons"], 
+                    ions=sections["ions"], 
+                    cell=sections["cell"], 
+                    kpoints_mode=kpoints_mode,
+                    kpoints_grid=kpoints_grid, 
+                    kpoints_shift=kpoints_shift)
+                    
+    @staticmethod
     def proc_val(key, val):
         """
         Static helper method to convert PWINPUT parameters to proper type, e.g.,
