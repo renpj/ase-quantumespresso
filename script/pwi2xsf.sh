@@ -147,7 +147,7 @@ if test -z $XCRYSDEN_TOPDIR; then
 else
     scriptdir=$XCRYSDEN_TOPDIR/scripts
 fi
-
+#pwi2xsf.x < pw.$$
 $scriptdir/pwi2xsf < pw.$$ #| tee pwi2xsf.xsf_out
 
 rm -f pw.$$

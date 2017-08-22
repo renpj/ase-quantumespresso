@@ -6,7 +6,9 @@ from __future__ import division, unicode_literals
 
 import re
 import six
-import ase
+import ase,ase.io
+import os,subprocess
+import StringIO
 
 from monty.io import zopen
 
@@ -79,6 +81,9 @@ class PWInput(object):
             kpoints_grid (sequence): The kpoint grid. Default to (1, 1, 1).
             kpoints_shift (sequence): The shift for the kpoints. Defaults to
                 (0, 0, 0).
+        TODO:
+            - support species index
+            - support constraint
         """
         self.atoms = atoms
         sections = {}
@@ -120,11 +125,14 @@ class PWInput(object):
             out.append("&%s" % k1.upper())
             sub = []
             for k2 in sorted(v1.keys()):
-                if isinstance(v1[k2], list): # for Hubbard_U etc.
-                    n = 1
-                    for l in v1[k2][:len(self.pseudo)]: 
-                        sub.append("  %s(%d) = %s" % (k2, n, to_str(v1[k2][n-1])))
-                        n += 1
+                if isinstance(v1[k2], list):
+                    if k2 in ['celldm']:
+                        for n,l in enumerate(v1[k2]):
+                            if l != 0:
+                                sub.append("  %s(%d) = %s" % (k2, n+1, to_str(l)))
+                    else: # for Hubbard_U etc.
+                        for n,l in enumerate(v1[k2][:len(self.pseudo)]): 
+                            sub.append("  %s(%d) = %s" % (k2, n+1, to_str(l)))
                 else:
                     sub.append("  %s = %s" % (k2, to_str(v1[k2])))
             if k1 == "system":
@@ -150,9 +158,11 @@ class PWInput(object):
         kpt_str = ["%s" % i for i in self.kpoints_grid]
         kpt_str.extend(["%s" % i for i in self.kpoints_shift])
         out.append("  %s" % " ".join(kpt_str))
-        out.append("CELL_PARAMETERS angstrom")
-        for vec in self.atoms.cell:
-            out.append("  %f %f %f" % (vec[0], vec[1], vec[2]))
+        if ('ibrav' not in self.sections['system']) or (self.sections['system']['ibrav']==0):
+            out.append("CELL_PARAMETERS angstrom")
+            for vec in self.atoms.cell:
+                out.append("  %f %f %f" % (vec[0], vec[1], vec[2]))
+        out.append('')
         return "\n".join(out)
 
     def write_file(self, filename):
@@ -189,7 +199,31 @@ class PWInput(object):
 
         Returns:
             PWInput object
+        TODO:
+            - support species index
+            - support constraint
         """
+        tmpfile = '/tmp/tmp.in'
+        with zopen(tmpfile, "w") as ftmp:
+            ftmp.write(string)
+        cmd = os.path.abspath(os.path.dirname(__file__))
+        cmd += '/../script/pwi2xsf.sh '
+        cmd += tmpfile
+        p = subprocess.Popen(cmd,shell=True,stdout=subprocess.PIPE)
+        xsf_str = p.stdout.read()
+        ## Note: current pwi2xsf output can't be recognized by ase.io.read,
+        ## so we have to replace DIM_GROUP at first 2 lines by CRYSTAL.
+        ## pwi2xsf.x in qe can generate ase compatible xsf format,
+        ## however it is not portable.
+        xsf_lines = list(clean_lines(xsf_str.splitlines()))
+        xsf_lines = ['CRYSTAL'] + xsf_lines[2:]
+        xsf_str = '\n'.join(xsf_lines)
+        xsf_io = StringIO.StringIO(xsf_str)
+        with open('/tmp/test.xsf','w') as f:
+            f.write(xsf_str)
+        atoms = ase.io.read(xsf_io,format='xsf')
+        os.remove(tmpfile)
+        
         lines = list(clean_lines(string.splitlines()))
 
         def input_mode(line):
@@ -238,7 +272,7 @@ class PWInput(object):
                             sections[section][key][int(key_)-1] = PWInput.proc_val(key, val) 
                     else:
                         sections[section][key] = PWInput.proc_val(key, val)
-
+                        
             elif mode[0] == "pseudo":
                 m = re.match(r'(\w+)\s+(\d*.\d*)\s+(.*)', line)
                 if m:
@@ -263,13 +297,14 @@ class PWInput(object):
                     coords_are_cartesian = True
                 elif mode[1] == "crystal":
                     coords_are_cartesian = False
-        if len(lattice) == 0: ## depend on QE pwi2xsf.x
             
-        return (species,coords,pseudo,lattice)
-        if coords_are_cartesian:
-            atoms = ase.Atoms(symbols=species,positions=coords,pbc=True,cell=lattice)
-        else:
-            atoms = ase.Atoms(symbols=species,scaled_positions=coords,pbc=True,cell=lattice)
+        #return (species,coords,pseudo,lattice)
+        #if coords_are_cartesian:
+        #    atoms = ase.Atoms(symbols=species,positions=coords,pbc=True,cell=lattice)
+        #else:
+        #    atoms = 
+        #        ase.Atoms(symbols=species,scaled_positions=coords,pbc=True,cell=lattice)
+        #return sections
         return PWInput(
                     atoms=atoms,
                     pseudo = pseudo,
@@ -287,13 +322,13 @@ class PWInput(object):
         """
         Static helper method to convert PWINPUT parameters to proper type, e.g.,
         integers, floats, etc.
-
+        Be sure the keys lists are complete.
         Args:
             key: PWINPUT parameter key
             val: Actual value of PWINPUT parameter.
         """
         float_keys = ('etot_conv_thr','forc_conv_thr','conv_thr','Hubbard_U','Hubbard_J0','defauss',
-                      'starting_magnetization',)
+                      'starting_magnetization','celldm','ecutrho','ecutwfc',)
 
         int_keys = ('nstep','iprint','nberrycyc','gdir','nppstr','ibrav','nat','ntyp','nbnd','nr1',
                     'nr2','nr3','nr1s','nr2s','nr3s','nspin','nqx1','nqx2','nqx3','lda_plus_u_kind',
@@ -307,13 +342,7 @@ class PWInput(object):
                      'noncolin','x_gamma_extrapolation','lda_plus_u','lspinorb','london',
                      'ts_vdw_isolated','xdm','uniqueb','rhombohedral','realxz','block',
                      'scf_must_converge','adaptive_thr','diago_full_acc','tqr','remove_rigid_rot',
-                     'refold_pos')
-
-        def smart_int_or_float(numstr):
-            if numstr.find(".") != -1 or numstr.lower().find("e") != -1:
-                return float(numstr)
-            else:
-                return int(numstr)
+                     'refold_pos','spline_ps')
 
         try:
             if key in bool_keys:
@@ -323,19 +352,10 @@ class PWInput(object):
                     return False
                 else:
                     raise ValueError(key + " should be a boolean type!")
-
             if key in float_keys:
-                return float(re.search(r"^-?\d*\.?\d*d?-?\d*", val.lower()).group(0).replace("d", "e"))
-
+                return float(re.search(r"^-?\d*\.?\d*e?-?\d*", val.lower().replace("d", "e")).group(0))
             if key in int_keys:
                 return int(re.match(r"^-?[0-9]+", val).group(0))
-
-        except ValueError:
-            pass
-
-        try:
-            val = val.replace("d","e")
-            return smart_int_or_float(val)
         except ValueError:
             pass
 
@@ -344,9 +364,10 @@ class PWInput(object):
         if "false" in val.lower():
             return False
 
-        m = re.match(r"^[\"|'](.+)[\"|']$", val)
+        m = re.match(r"^[\"|'](.+)[\"|']", val) # remove quote and dot
         if m:
             return m.group(1)
+        return val
 
 
 
