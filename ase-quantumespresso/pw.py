@@ -1,5 +1,5 @@
 # coding: utf-8
-# Copyright (c) PJ Ren and Pymatgen Development Team.
+# Copyright (c) PJ Ren.
 # Distributed under the terms of the MIT License.
 
 from __future__ import division, unicode_literals
@@ -15,10 +15,21 @@ from monty.io import zopen
 from monty.re import regrep
 from collections import defaultdict
 
+from pw_input_parameters import float_keys,bool_keys,int_keys
+from utils import get_atom_mass,clean_lines
+
 """
 This module implements input and output processing for PWSCF.
 Use xcrysden functions and scripts to read the pw input and output structures.
+
+TODO:
+    - default pseudo potential assignment
+    - support element index, like O1,O2
+    - constriaint 
+    - out-of-the-box default parameters 
+    - output parser
 """
+
 __author__ = "PJ Ren"
 __copyright__ = "Copyright 2017, PJ Ren"
 __version__ = "0.1"
@@ -26,36 +37,9 @@ __maintainer__ = "PJ Ren"
 __email__ = "openrpj@gmail.com"
 __date__ = "8/19/2017"
 
-def get_atom_mass(symbol):
-    n = ase.data.atomic_numbers[symbol]
-    return ase.data.atomic_masses[n-1]
-
-def clean_lines(string_list, remove_empty_lines=True):
-    """
-    Strips whitespace, carriage returns and empty lines from a list of strings.
-
-    Args:
-        string_list: List of strings
-        remove_empty_lines: Set to True to skip lines which are empty after
-            stripping.
-
-    Returns:
-        List of clean strings with no whitespaces.
-    """
-
-    for s in string_list:
-        clean_s = s
-        if '#' in s:
-            ind = s.index('#')
-            clean_s = s[:ind]
-        clean_s = clean_s.strip()
-        if (not remove_empty_lines) or clean_s != '':
-            yield clean_s
-
 class PWInput(object):
     """
-    Base input file class. Right now, only supports no symmetry and is
-    very basic. Initially adopted from pymatgen
+    Base input file class. Initially adapted from pymatgen.
     """
 
     def __init__(self, atoms=None, pseudo=None, control=None, system=None,
@@ -81,9 +65,6 @@ class PWInput(object):
             kpoints_grid (sequence): The kpoint grid. Default to (1, 1, 1).
             kpoints_shift (sequence): The shift for the kpoints. Defaults to
                 (0, 0, 0).
-        TODO:
-            - support species index
-            - support constraint
         """
         self.atoms = atoms
         sections = {}
@@ -199,9 +180,6 @@ class PWInput(object):
 
         Returns:
             PWInput object
-        TODO:
-            - support species index
-            - support constraint
         """
         tmpfile = '/tmp/tmp.in'
         with zopen(tmpfile, "w") as ftmp:
@@ -219,8 +197,11 @@ class PWInput(object):
         xsf_lines = ['CRYSTAL'] + xsf_lines[2:]
         xsf_str = '\n'.join(xsf_lines)
         xsf_io = StringIO.StringIO(xsf_str)
-        with open('/tmp/test.xsf','w') as f:
-            f.write(xsf_str)
+        
+        # only for test
+        #with open('/tmp/test.xsf','w') as f:
+        #    f.write(xsf_str)
+        
         atoms = ase.io.read(xsf_io,format='xsf')
         os.remove(tmpfile)
         
@@ -327,22 +308,6 @@ class PWInput(object):
             key: PWINPUT parameter key
             val: Actual value of PWINPUT parameter.
         """
-        float_keys = ('etot_conv_thr','forc_conv_thr','conv_thr','Hubbard_U','Hubbard_J0','defauss',
-                      'starting_magnetization','celldm','ecutrho','ecutwfc',)
-
-        int_keys = ('nstep','iprint','nberrycyc','gdir','nppstr','ibrav','nat','ntyp','nbnd','nr1',
-                    'nr2','nr3','nr1s','nr2s','nr3s','nspin','nqx1','nqx2','nqx3','lda_plus_u_kind',
-                    'edir','report','esm_nfit','space_group','origin_choice','electron_maxstep',
-                    'mixing_ndim','mixing_fixed_ns','ortho_para','diago_cg_maxiter','diago_david_ndim',
-                    'nraise','bfgs_ndim','if_pos','nks','nk1','nk2','nk3','sk1','sk2','sk3','nconstr')
-
-        bool_keys = ('wf_collect','tstress','tprnfor','lkpoint_dir','tefield','dipfield','lelfield',
-                     'lorbm','lberry','lfcpopt','monopole','nosym','nosym_evc','noinv','no_t_rev',
-                     'force_symmorphic','use_all_frac','one_atom_occupations','starting_spin_angle',
-                     'noncolin','x_gamma_extrapolation','lda_plus_u','lspinorb','london',
-                     'ts_vdw_isolated','xdm','uniqueb','rhombohedral','realxz','block',
-                     'scf_must_converge','adaptive_thr','diago_full_acc','tqr','remove_rigid_rot',
-                     'refold_pos','spline_ps')
 
         try:
             if key in bool_keys:

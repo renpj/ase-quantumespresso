@@ -34,8 +34,8 @@
    cell_dynamics='bfgs'
 /
 ATOMIC_SPECIES
-Sn  118.710  Sn.pseudo_file
-Sn  118.710  Sn.pseudo_file
+Sn1  118.710  Sn.pseudo_file
+Sn2  118.710  Sn.pseudo_file
   O  15.9994   O.pseudo_file
 K_POINTS {automatic}
 5 5 5 0 0 0
@@ -44,8 +44,8 @@ CELL_PARAMETERS {angstrom}
   0.000000   4.740000   0.000000
   0.000000   0.000000   3.188000
 ATOMIC_POSITIONS {angstrom}
- Sn   0.000000   0.000000   0.000000
- Sn   2.370000   2.370000   1.594000
+ Sn1   0.000000   0.000000   0.000000
+ Sn2   2.370000   2.370000   1.594000
    O   1.449569   1.449569   0.000000
    O   3.290431   3.290431   0.000000
    O   0.920431   3.819569   1.594000

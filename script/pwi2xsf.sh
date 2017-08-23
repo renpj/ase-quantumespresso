@@ -94,7 +94,7 @@ toupper($0) ~ /&END|^\/|^ \// {
 
 /a*/ {
   if ( print_line == 1 ) {
-    print toupper($0);
+    print $0;
   }
 }'> pw.$$
 else 

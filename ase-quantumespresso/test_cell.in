@@ -1,0 +1,50 @@
+&CONTROL
+  calculation = 'scf',
+  disk_io = 'low',
+  etot_conv_thr = 0.0001,
+  forc_conv_thr = 0.0001,
+  outdir = '.',
+  prefix = 'sno2',
+  pseudo_dir = '/path/to/pseudo/dir',
+  restart_mode = 'from_scratch',
+  wfcdir = '.',
+/
+&SYSTEM
+  degauss = 0.1,
+  ecutrho = 400.0,
+  ecutwfc = 60.0,
+  ibrav = 0,
+  input_dft = 'pbe',
+  nat = 6,
+  nspin = 2,
+  ntyp = 3,
+  occupations = 'smearing',
+  smearing = 'gaussian',
+  starting_magnetization(1) = 0.5,
+  starting_magnetization(2) = -0.5,
+/
+&ELECTRONS
+  conv_thr = 1d-06,
+/
+&IONS
+  ion_dynamics = 'bfgs',
+/
+&CELL
+  cell_dynamics = 'bfgs',
+/
+ATOMIC_SPECIES
+  O  14.0070 O.pseudo_file
+  Sn  114.8180 Sn.pseudo_file
+ATOMIC_POSITIONS crystal
+  Sn 0.000000 0.000000 0.000000
+  Sn 0.944863 0.944863 0.944863
+  O 0.577909 0.577909 0.000000
+  O 0.311818 0.311818 0.000000
+  O 0.366954 0.522773 0.944863
+  O 0.522773 0.366954 0.944863
+K_POINTS automatic
+  5 5 5 0 0 0
+CELL_PARAMETERS angstrom
+  2.508299 0.000000 0.000000
+  0.000000 2.508299 0.000000
+  0.000000 0.000000 1.687016
